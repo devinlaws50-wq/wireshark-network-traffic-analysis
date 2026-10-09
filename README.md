@@ -2,13 +2,13 @@
 
 Hands-on packet capture and analysis using Wireshark — captured, filtered, and interpreted real traffic on my own machine to demonstrate the core skills a network engineer, SOC analyst, or incident responder uses daily: reading DNS resolution, verifying TCP connection setup, proving why HTTPS matters, and reconstructing full conversations from individual packets.
 
-| Field | Value |
-|---|---|
-| Tool | Wireshark 4.6.9 (free, open source) |
-| Environment | macOS, local machine (no cloud VM required) |
-| Time to complete | ~2 hours across one session |
-| Cost | $0 |
-| Certification alignment | CompTIA Network+, Security+, CySA+ |
+| Field                   | Value                                       |
+| ----------------------- | ------------------------------------------- |
+| Tool                    | Wireshark 4.6.9 (free, open source)         |
+| Environment             | macOS, local machine (no cloud VM required) |
+| Time to complete        | ~2 hours across one session                 |
+| Cost                    | $0                                          |
+| Certification alignment | CompTIA Network+, Security+, CySA+          |
 
 ## Architecture
 
@@ -34,17 +34,19 @@ Capture file: [`captures/dns-lookup-google-com.pcapng`](captures/dns-lookup-goog
 
 **Goal:** watch a TCP connection get established from nothing, and be able to explain what each packet means.
 
-**Method:** fresh capture on `en0`, browsed to `http://example.com`, stopped the capture, resolved `example.com`'s IP with `nslookup`, and filtered on `tcp and (ip.addr == 172.66.147.243 or ip.addr == 104.20.23.154)` (example.com resolves to either of two CDN-fronted IPs).
+**Method:** fresh capture on `en0`, browsed to `http://example.com`, stopped the capture, resolved `example.com`'s IP with `nslookup`, and filtered on `tcp and ip.addr == 172.66.147.243` (example.com resolves to either of two CDN-fronted IPs; traffic happened to route to this one).
 
 ![TCP three-way handshake](screenshots/02-tcp-handshake.png)
 
-| Packet | Flags | Meaning |
-|---|---|---|
-| 509 | `SYN` | My machine: "I want to connect, starting sequence number 0." |
-| 513 | `SYN, ACK` | The server: "Received, here's my sequence number, connection accepted." |
-| 514 | `ACK` | My machine: "Confirmed — connection open, ready to send data." |
+| Packet | Flags      | Meaning                                                                 |
+| ------ | ---------- | ----------------------------------------------------------------------- |
+| 221    | `SYN`      | My machine: "I want to connect, starting sequence number 0."            |
+| 224    | `SYN, ACK` | The server: "Received, here's my sequence number, connection accepted." |
+| 225    | `ACK`      | My machine: "Confirmed — connection open, ready to send data."          |
 
-Worth flagging: even though I typed `http://`, the destination port is **443**, not 80 — the browser silently upgraded to HTTPS on its own (standard behavior now via HSTS/default-HTTPS policies). That doesn't change what this exercise demonstrates: the three-way handshake happens identically regardless of what rides on top of it. Packet 516, right after the handshake completes, is the TLS **Client Hello** — proof that encryption negotiation only starts *after* the underlying TCP connection is already open. A SYN with no SYN-ACK in response is the single fastest signal of "the server is down, the port's closed, or a firewall is blocking me."
+Worth flagging: even though I typed `http://`, the destination port is **443**, not 80 — the browser silently upgraded to HTTPS on its own (standard behavior now via HSTS/default-HTTPS policies). That doesn't change what this exercise demonstrates: the three-way handshake happens identically regardless of what rides on top of it. The packet right after the handshake completes is the TLS **Client Hello** (SNI=example.com) — proof that encryption negotiation only starts *after* the underlying TCP connection is already open. A SYN with no SYN-ACK in response is the single fastest signal of "the server is down, the port's closed, or a firewall is blocking me."
+
+First attempt at this capture needed a redo: the browser reused an already-open pooled connection instead of opening a fresh one, so no new SYN packet appeared for the target IP. Filtering broadly on `tcp.flags.syn == 1` across the whole capture — rather than pre-filtering by IP — showed every SYN going out and confirmed no connection to example.com had actually happened yet. A hard reload (`Cmd+Shift+R`) of the page forced a brand-new connection, which is the capture shown above.
 
 Capture file: [`captures/tcp-handshake-example-com.pcapng`](captures/tcp-handshake-example-com.pcapng)
 
